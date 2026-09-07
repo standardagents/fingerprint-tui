@@ -42,6 +42,8 @@ class Device(dbus.service.Object):
 
     @dbus.service.method(IFACE, in_signature='s', out_signature='as')
     def ListEnrolledFingers(self, user):
+        if self.mode == 'check-claimed' and self.user is None:
+            raise dbus.DBusException('Check requires claim', name='net.reactivated.Fprint.Error.ClaimDevice')
         if not self.prints:
             raise dbus.DBusException('Empty', name='net.reactivated.Fprint.Error.NoEnrolledPrints')
         return self.prints
@@ -52,6 +54,8 @@ class Device(dbus.service.Object):
             raise dbus.DBusException('Busy', name='net.reactivated.Fprint.Error.AlreadyInUse')
         if self.mode == 'denied':
             raise dbus.DBusException('Denied', name='net.reactivated.Fprint.Error.PermissionDenied')
+        if self.mode == 'race':
+            self.prints.append('right-middle-finger')
         self.calls.append('Claim:' + user)
         self.user = user
 

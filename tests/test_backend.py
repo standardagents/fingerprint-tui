@@ -44,7 +44,7 @@ class BackendTests(unittest.TestCase):
             c.SetFingers(fingers)
         with self.assertRaises(Error):
             self.operation()
-        self.assertEqual(list(self.controls[0].Calls()), [])
+        self.assertEqual(list(self.controls[0].Calls()), ['Claim:test-user', 'Release'])
         self.assertTrue(self.operation(index=1)['ok'])
 
     def test_success_and_device_isolation(self):
@@ -62,7 +62,18 @@ class BackendTests(unittest.TestCase):
     def test_reenrollment_never_replaces_print(self):
         with self.assertRaises(Error):
             self.operation(finger='right-index-finger')
-        self.assertEqual(list(self.controls[0].Calls()), [])
+        self.assertEqual(list(self.controls[0].Calls()), ['Claim:test-user', 'Release'])
+
+    def test_checks_remain_inside_exclusive_claim(self):
+        self.controls[0].Reset('check-claimed')
+        self.assertTrue(self.operation()['ok'])
+
+    def test_concurrent_enrollment_is_not_replaced(self):
+        self.controls[0].Reset('race')
+        with self.assertRaisesRegex(Error, 'already enrolled'):
+            self.operation()
+        self.assertEqual(list(self.controls[0].Calls()), ['Claim:test-user', 'Release'])
+        self.assertEqual(self.readers[0].fingers(), ['right-index-finger', 'right-middle-finger'])
 
     def test_terminal_failures_release(self):
         for mode in ('full', 'duplicate', 'disconnect', 'fail'):

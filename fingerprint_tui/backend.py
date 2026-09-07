@@ -63,13 +63,6 @@ class Device:
     def run(self, action, finger, user, emit, cancel_fd=None, timeout=120):
         if action not in ('enroll', 'verify', 'delete') or finger not in FINGERS:
             raise Error('Choose a valid operation and finger.')
-        before = self.fingers(user)
-        if action == 'enroll' and self.capacity is not None and len(before) >= self.capacity:
-            raise Error('Touch ID: 3 of 3 fingerprints enrolled. Remove one before adding another.')
-        if action == 'enroll' and finger in before:
-            raise Error('That finger is already enrolled. Remove it explicitly before replacing it.')
-        if action != 'enroll' and finger not in before:
-            raise Error('That finger is no longer enrolled. Refresh the list.')
         loop = GLib.MainLoop()
         result = None
         passed = 0
@@ -104,6 +97,13 @@ class Device:
         try:
             self.api.Claim(user, timeout=10)
             claimed = True
+            before = self.fingers(user)
+            if action == 'enroll' and self.capacity is not None and len(before) >= self.capacity:
+                raise Error('Touch ID: 3 of 3 fingerprints enrolled. Remove one before adding another.')
+            if action == 'enroll' and finger in before:
+                raise Error('That finger is already enrolled. Remove it explicitly before replacing it.')
+            if action != 'enroll' and finger not in before:
+                raise Error('That finger is no longer enrolled. Refresh the list.')
             if action == 'delete':
                 # Never substitute DeleteEnrolledFingers: it erases every print.
                 self.api.DeleteEnrolledFinger(finger, timeout=10)
@@ -120,6 +120,19 @@ class Device:
                 started = True
                 if result is None:
                     loop.run()
+            if started:
+                stop = self.api.EnrollStop if action == 'enroll' else self.api.VerifyStop
+                stop(timeout=10)
+                started = False
+            expected = {'enroll': 'enroll-completed', 'verify': 'verify-match', 'delete': 'deleted'}[action]
+            if result != expected:
+                return {'status': result or 'failed', 'ok': False}
+            after = self.fingers(user)
+            if action == 'enroll' and (finger not in after or not set(before) <= set(after)):
+                raise Error('Could not confirm the new fingerprint. Refresh the list before retrying.')
+            if action == 'delete' and set(after) != set(before) - {finger}:
+                raise Error('Could not confirm exact removal. Refresh the list before retrying.')
+            return {'status': expected, 'ok': True, 'progress': 100}
         finally:
             for source in sources:
                 GLib.source_remove(source)
@@ -132,12 +145,3 @@ class Device:
                         stop(timeout=10)
                 finally:
                     self.api.Release(timeout=10)
-        expected = {'enroll': 'enroll-completed', 'verify': 'verify-match', 'delete': 'deleted'}[action]
-        if result != expected:
-            return {'status': result or 'failed', 'ok': False}
-        after = self.fingers(user)
-        if action == 'enroll' and (finger not in after or not set(before) <= set(after)):
-            raise Error('Could not confirm the new fingerprint. Refresh the list before retrying.')
-        if action == 'delete' and set(after) != set(before) - {finger}:
-            raise Error('Could not confirm exact removal. Refresh the list before retrying.')
-        return {'status': expected, 'ok': True, 'progress': 100}
