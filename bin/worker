@@ -1,0 +1,5 @@
+#!/usr/bin/python3 -I
+import sys
+sys.path.insert(0, '/usr/lib/fingerprint-tui')
+from fingerprint_tui.worker import main
+sys.exit(main())
